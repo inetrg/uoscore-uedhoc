@@ -13,11 +13,18 @@
 #include "../inc/byte_array.h"
 #include "../inc/error.h"
 
-#ifdef OSCORE_WITH_TINYCRYPT
+#ifdef OSCORE_WITH_TINYCRYPT_AES_128
 
 #include <string.h>
 #include <tinycrypt/aes.h>
 #include <tinycrypt/ccm_mode.h>
+
+#elif defined(OSCORE_WITH_TINYDTLS_AES_128)
+#include "crypto.h"
+
+#endif
+
+#if defined(OSCORE_WITH_TINYCRYPT_SHA_256)
 #include <tinycrypt/constants.h>
 #include <tinycrypt/hmac.h>
 
@@ -31,7 +38,7 @@
 
 #define SALT_SIZE 32
 
-#endif
+#endif /* OSCORE_WITH_TINYCRYPT_SHA_256 */
 
 OscoreError __attribute__((weak))
 aes_ccm_16_64_128(enum aes_operation op, struct byte_array *in,
@@ -39,7 +46,7 @@ aes_ccm_16_64_128(enum aes_operation op, struct byte_array *in,
 		  struct byte_array *nonce, struct byte_array *aad,
 		  struct byte_array *tag)
 {
-#ifdef OSCORE_WITH_TINYCRYPT
+#if defined(OSCORE_WITH_TINYCRYPT_AES_128)
 	int result = TC_CRYPTO_SUCCESS;
 
 	struct tc_ccm_mode_struct c;
@@ -62,24 +69,46 @@ aes_ccm_16_64_128(enum aes_operation op, struct byte_array *in,
 
 	} else {
 		result = tc_ccm_generation_encryption(out->ptr, out->len,
-						      aad->ptr, aad->len,
-						      in->ptr, in->len, &c);
+							  aad->ptr, aad->len,
+							  in->ptr, in->len, &c);
 
 		if (result == 0) {
 			return OscoreTinyCryptError;
 		}
 	}
 
-#endif /* TINYCRYPT */
+#elif defined(OSCORE_WITH_TINYDTLS_AES_128)
+
+	const dtls_ccm_params_t params = {
+		.nonce = nonce->ptr,
+		.tag_length = 8,	/* M value (in bytes) from table 10 - RFC 8152 */
+		.l = 2				/* L value (in bytes) from table 10 - RFC 8152 */
+	};
+
+	int result = 0;
+
+	if (op == DECRYPT) {
+		result = dtls_decrypt_params(&params, in->ptr, in->len, out->ptr, key->ptr, key->len,
+										aad->ptr, aad->len);
+	}
+	else {
+		result = dtls_encrypt_params(&params, in->ptr, in->len, out->ptr, key->ptr, key->len,
+										aad->ptr, aad->len);
+		if (result < 0) {
+			return OscoreAuthenticationError;
+		}
+	}
+
+#endif
 
 	return OscoreNoError;
 };
 
 OscoreError __attribute__((weak))
 hkdf_sha_256(struct byte_array *master_secret, struct byte_array *master_salt,
-	     struct byte_array *info, struct byte_array *out)
+		 struct byte_array *info, struct byte_array *out)
 {
-#ifdef OSCORE_WITH_TINYCRYPT
+#if defined(OSCORE_WITH_TINYCRYPT_SHA_256)
 
 	uint8_t default_salt[SALT_SIZE] = { 0 };
 	struct byte_array salt;
@@ -134,5 +163,5 @@ hkdf_sha_256(struct byte_array *master_secret, struct byte_array *master_salt,
 
 	return OscoreNoError;
 
-#endif /* TINYCRYPT */
+#endif /* OSCORE_WITH_TINYCRYPT_SHA_256 */
 };
