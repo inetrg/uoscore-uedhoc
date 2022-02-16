@@ -210,9 +210,10 @@ static inline OscoreError buf2options(uint8_t *in_data, uint16_t in_data_len,
 
 OscoreError buf2coap(struct byte_array *in, struct o_coap_packet *out)
 {
-	OscoreError r;
+	//OscoreError r;
 	uint8_t *tmp_p = in->ptr;
 	uint16_t payload_len = in->len;
+	uint8_t *end = &tmp_p[payload_len];
 
 	/* Read CoAP/OSCORE header (4 bytes)*/
 	out->header.ver =
@@ -240,31 +241,110 @@ OscoreError buf2coap(struct byte_array *in, struct o_coap_packet *out)
 	payload_len -= out->header.TKL;
 
 	/* Options, if any */
-	/* Check if there any options exist*/
-	if (*tmp_p == 0xFF || payload_len == 0) {
-		/* No options*/
-		out->options_cnt = 0;
-	} else {
-		/* Length of options byte string */
-		uint16_t options_len = 0;
-		uint8_t *temp_option_ptr = tmp_p;
+	out->options_cnt = 0;
 
-		/* Move tmp_p to the payload to get the length of options byte string*/
-		while (*tmp_p != 0xFF && payload_len != 0) {
-			payload_len--;
-			tmp_p++;
-			options_len++;
+	uint16_t opt_number = 0;
+	uint8_t *opt_pointer = tmp_p;
+
+	while (payload_len && *tmp_p != 0xFF) {
+		/* parse an option */
+		/* first byte is option delta and option length initial bits */
+		uint16_t opt_delta = ((*opt_pointer) & OPTION_DELTA_MASK) >> OPTION_DELTA_OFFSET;
+		uint16_t opt_length = ((*opt_pointer) & OPTION_LENGTH_MASK) >> OPTION_LENGTH_OFFSET;
+		opt_pointer++;
+
+		/* check that we are still in buffer */
+		if (opt_pointer >= end) {
+			return OscoreInPktInvalidOptionDelta;
 		}
 
-		/* Parser all options */
-		if (options_len > 0) {
-			r = buf2options(temp_option_ptr, options_len,
-					out->options, &(out->options_cnt));
-			if (r != OscoreNoError)
-				return r;
-		} else {
-			out->options_cnt = 0;
+		/* check special cases of option delta */
+		switch (opt_delta) {
+		case OPTION_DELTA_EXTENDED_8BIT:
+			/* next byte should be the delta instead, minus an offset */
+			opt_delta = opt_pointer[0];
+			opt_delta += OPTION_DELTA_EXTENDED_8BIT_OFFSET;
+			opt_pointer++;
+			break;
+
+		case OPTION_DELTA_EXTENDED_16BIT:
+			/* next two bytes should be the delta instead, minus an offset */
+			if (&opt_pointer[0] >= end || &opt_pointer[1] >= end) {
+				return OscoreInPktInvalidOptionDelta;
+			}
+
+			opt_delta = ((uint16_t) opt_pointer[0] << 8 | opt_pointer[1]);
+			opt_delta += OPTION_DELTA_EXTENDED_16BIT_OFFSET;
+			opt_pointer += 2;
+			break;
+
+		case OPTION_DELTA_RESERVED:
+			/* reserved value */
+			return OscoreInPktInvalidOptionDelta;
+			break;
+
+		default:
+			break;
 		}
+
+		/* check that we are still in buffer */
+		if (opt_pointer >= end) {
+			return OscoreInPktInvalidOptionDelta;
+		}
+
+		/* check special cases of option length */
+		switch (opt_length) {
+		case OPTION_LENGTH_EXTENDED_8BIT:
+			/* next byte should be the length instead, minus an offset */
+			opt_length = opt_pointer[0];
+			opt_length += OPTION_LENGTH_EXTENDED_8BIT_OFFSET;
+			opt_pointer ++;
+			break;
+
+		case OPTION_LENGTH_EXTENDED_16BIT:
+			/* next two bytes should be the length instead, minus an offset */
+			if (&opt_pointer[0] >= end || &opt_pointer[1] >= end) {
+				return OscoreInPktInvalidOptionDelta;
+			}
+
+			opt_length = ((uint16_t) opt_pointer[0] << 8 | opt_pointer[1]);
+			opt_length += OPTION_DELTA_EXTENDED_16BIT_OFFSET;
+			opt_pointer += 2;
+			break;
+
+		case OPTION_LENGTH_RESERVED:
+			/* reserved value */
+			return OscoreInPktInvalidOptionLen;
+			break;
+
+		default:
+			break;
+		}
+
+		/* check that we are still in buffer and option value length is valid */
+		if (opt_pointer >= end || &opt_pointer[opt_length] > end) {
+			return OscoreInPktInvalidOptionLen;
+		}
+
+		/* accumulate option number */
+		opt_number += opt_delta;
+
+		out->options[out->options_cnt].delta = opt_delta;
+		out->options[out->options_cnt].len = opt_length;
+		out->options[out->options_cnt].option_number = opt_number;
+
+		if (!opt_length) {
+			out->options[out->options_cnt].value = NULL;
+		}
+		else {
+			out->options[out->options_cnt].value = opt_pointer;
+		}
+
+		/* update loop */
+		opt_pointer = &opt_pointer[opt_length]; /* skip payload */
+		out->options_cnt++;
+		payload_len -= (opt_pointer - tmp_p);
+		tmp_p = opt_pointer;
 	}
 
 	/* Payload, if any */

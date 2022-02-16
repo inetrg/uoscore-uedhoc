@@ -22,6 +22,7 @@
 #include "../inc/oscore_cose.h"
 #include "../inc/print_util.h"
 #include "../inc/security_context.h"
+#include "od.h"
 
 /**
  * @brief Extract input CoAP options into E(encrypted) and U(unprotected)

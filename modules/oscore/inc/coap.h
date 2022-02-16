@@ -51,6 +51,39 @@
 #define Changed 0b01000100
 #define REQUEST_CLASS 0
 
+/* mask and offset for option delta */
+#define OPTION_DELTA_MASK   0xF0
+#define OPTION_DELTA_OFFSET 4
+
+/* mask and offset for option length */
+#define OPTION_LENGTH_MASK   0x0F
+#define OPTION_LENGTH_OFFSET 0
+
+/* value for 1-byte extended delta and offset */
+#define OPTION_DELTA_EXTENDED_8BIT  13
+#define OPTION_DELTA_EXTENDED_8BIT_OFFSET  13
+
+/* value for 2-bytes extended delta and offset */
+#define OPTION_DELTA_EXTENDED_16BIT 14
+#define OPTION_DELTA_EXTENDED_16BIT_OFFSET 269
+
+/* reserved delta value */
+#define OPTION_DELTA_RESERVED       15
+
+/* value for 1-byte extended length and offset */
+#define OPTION_LENGTH_EXTENDED_8BIT          13
+#define OPTION_LENGTH_EXTENDED_8BIT_OFFSET   13
+
+/* value for 2-bytes extended length and offset */
+#define OPTION_LENGTH_EXTENDED_16BIT         14
+#define OPTION_LENGTH_EXTENDED_16BIT_OFFSET  269
+
+/* reserved length value */
+#define OPTION_LENGTH_RESERVED        15
+
+/* payload marker */
+#define PAYLOAD_MARKER 0xFF
+
 /* all CoAP instances are preceeded with 'o_' to show correspondence to
  * OSCORE and prevent conflicts with networking CoAP libraries 
  */
